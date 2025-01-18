@@ -55,3 +55,6 @@ features = [
 
 [badges.travis-ci]
 repository = "ostrosco/device_query"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }

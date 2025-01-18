@@ -40,6 +40,7 @@
 
 #[macro_use]
 extern crate lazy_static;
+extern crate serde;
 
 #[cfg(target_os = "windows")]
 extern crate windows;
