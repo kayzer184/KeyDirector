@@ -1,6 +1,6 @@
-extern crate device_query;
+extern crate key_director;
 
-use device_query::{DeviceQuery, DeviceState, MouseState};
+use key_director::{DeviceQuery, DeviceState, MouseState};
 
 fn main() {
     let device_state = DeviceState::new();

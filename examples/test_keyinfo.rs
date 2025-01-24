@@ -1,6 +1,6 @@
-extern crate device_query;
+extern crate key_director;
 
-use device_query::{DeviceQuery, DeviceState};
+use key_director::{DeviceQuery, DeviceState};
 use std::{thread, time::Duration};
 
 fn main() {
