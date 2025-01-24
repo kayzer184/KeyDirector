@@ -1,7 +1,7 @@
 //! Query functions.
 
-use DeviceState;
-use {KeyEvent, MouseState};
+use crate::DeviceState;
+use crate::{KeyEvent, MouseState};
 
 /// Trait to get the state of the supported devices.
 pub trait DeviceQuery {
