@@ -5,7 +5,12 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_XBUTTON1, VK_XBUTTON2, MAP_VIRTUAL_KEY_TYPE, VK_CAPITAL,
     GetKeyState
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow, GetWindowThreadProcessId};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetCursorPos, GetForegroundWindow, GetWindowThreadProcessId
+};
+use windows::Win32::System::Threading::{
+    GetCurrentThreadId, AttachThreadInput
+};
 use std::sync::Mutex;
 use crate::KeyEvent;
 use crate::MouseState;
@@ -28,8 +33,12 @@ impl DeviceState {
         unsafe {
             let foreground_window = GetForegroundWindow();
             let mut process_id = 0u32;
-            let thread_id = GetWindowThreadProcessId(foreground_window, Some(&mut process_id as *mut u32));
-            let keyboard_layout = GetKeyboardLayout(thread_id);
+            let window_thread = GetWindowThreadProcessId(foreground_window, Some(&mut process_id as *mut u32));
+            let current_thread = GetCurrentThreadId();
+            
+            AttachThreadInput(current_thread, window_thread, true);
+            
+            let keyboard_layout = GetKeyboardLayout(window_thread);
             
             let caps_on = (GetKeyState(VK_CAPITAL.0 as i32) & 1) != 0;
             GetKeyboardState(&mut keyboard_state);
@@ -37,6 +46,8 @@ impl DeviceState {
             if caps_on {
                 keyboard_state[VK_CAPITAL.0 as usize] |= 1;
             }
+
+            AttachThreadInput(current_thread, window_thread, false);
 
             for key_code in 0..256 {
                 let state = GetAsyncKeyState(key_code);

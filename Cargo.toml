@@ -50,7 +50,8 @@ features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
     "Win32_Foundation",
-    "Win32_UI_TextServices"
+    "Win32_UI_TextServices",
+    "Win32_System_Threading"
 ]
 
 [badges.travis-ci]
