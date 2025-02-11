@@ -49,10 +49,8 @@ pub mod device_events;
 pub mod device_query;
 pub mod device_state;
 pub mod keymap;
-pub mod mouse_state;
 
 pub use device_events::*;
 pub use device_query::*;
 pub use device_state::*;
 pub use keymap::*;
-pub use mouse_state::*;
