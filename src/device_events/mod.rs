@@ -13,20 +13,20 @@ use DeviceState;
 /// All the supported devices events.
 pub trait DeviceEvents: DeviceQuery {
     /// Register an on key down event callback.
-    fn on_key_down<Callback: Fn(&KeyEvent) + Sync + Send + 'static>(
+    fn on_key_down<Callback: Fn(&KeyEvent) -> bool + Sync + Send + 'static>(
         &self,
         callback: Callback,
     ) -> CallbackGuard<Callback>;
     
     /// Register an on key up event callback.
-    fn on_key_up<Callback: Fn(&KeyEvent) + Sync + Send + 'static>(
+    fn on_key_up<Callback: Fn(&KeyEvent) -> bool + Sync + Send + 'static>(
         &self,
         callback: Callback,
     ) -> CallbackGuard<Callback>;
 }
 
 impl DeviceEvents for DeviceState {
-    fn on_key_down<Callback: Fn(&KeyEvent) + Sync + Send + 'static>(
+    fn on_key_down<Callback: Fn(&KeyEvent) -> bool + Sync + Send + 'static>(
         &self,
         callback: Callback,
     ) -> CallbackGuard<Callback> {
@@ -36,7 +36,7 @@ impl DeviceEvents for DeviceState {
             .on_key_down(callback)
     }
 
-    fn on_key_up<Callback: Fn(&KeyEvent) + Sync + Send + 'static>(
+    fn on_key_up<Callback: Fn(&KeyEvent) -> bool + Sync + Send + 'static>(
         &self,
         callback: Callback,
     ) -> CallbackGuard<Callback> {

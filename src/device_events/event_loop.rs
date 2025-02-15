@@ -50,7 +50,7 @@ impl Default for EventLoop {
 }
 
 impl EventLoop {
-    pub fn on_key_down<Callback: Fn(&KeyEvent) + Send + Sync + 'static>(
+    pub fn on_key_down<Callback: Fn(&KeyEvent) -> bool + Send + Sync + 'static>(
         &mut self,
         callback: Callback,
     ) -> CallbackGuard<Callback> {
@@ -59,7 +59,7 @@ impl EventLoop {
         CallbackGuard { _callback }
     }
 
-    pub fn on_key_up<Callback: Fn(&KeyEvent) + Send + Sync + 'static>(
+    pub fn on_key_up<Callback: Fn(&KeyEvent) -> bool + Send + Sync + 'static>(
         &mut self,
         callback: Callback,
     ) -> CallbackGuard<Callback> {
@@ -70,7 +70,7 @@ impl EventLoop {
 
     pub fn on_keys<F>(&mut self, callback: F) -> CallbackGuard<F>
     where
-        F: Fn(Vec<KeyEvent>) + Send + Sync + 'static,
+        F: Fn(Vec<KeyEvent>) -> bool + Send + Sync + 'static,
     {
         let _callback = Arc::new(callback);
         self.keyboard_callbacks.push_keys(_callback.clone());

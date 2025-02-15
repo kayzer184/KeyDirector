@@ -4,10 +4,10 @@ use std::sync::{Arc, Mutex, Weak};
 use KeyEvent;
 
 /// Keyboard callback.
-pub type KeyboardCallback = dyn Fn(&KeyEvent) + Sync + Send + 'static;
+pub type KeyboardCallback = dyn Fn(&KeyEvent) -> bool + Sync + Send + 'static;
 
 /// Keys callback.
-pub type KeysCallback = dyn Fn(Vec<KeyEvent>) + Sync + Send + 'static;
+pub type KeysCallback = dyn Fn(Vec<KeyEvent>) -> bool + Sync + Send + 'static;
 
 /// Keyboard callbacks.
 #[derive(Default)]
@@ -46,7 +46,9 @@ impl KeyboardCallbacks {
             });
             for callback in callbacks.iter() {
                 if let Some(callback) = callback.upgrade() {
-                    callback(key);
+                    if !callback(key) {
+                        println!("Обработчик key_up вернул false для клавиши: {:?}", key);
+                    }
                 }
             }
         }
@@ -60,7 +62,9 @@ impl KeyboardCallbacks {
             for callback in callbacks.iter() {
                 if let Some(callback) = callback.upgrade() {
                     let keys = vec![key.clone()];
-                    callback(keys);
+                    if !callback(keys) {
+                        println!("Обработчик key_down вернул false для клавиши: {:?}", key);
+                    }
                 }
             }
         }

@@ -13,7 +13,7 @@ pub trait DeviceQuery {
     /// Subscribe to key events
     fn subscribe_keys<F>(&self, callback: F) -> CallbackGuard<F>
     where
-        F: Fn(Vec<KeyEvent>) + Send + Sync + 'static;
+        F: Fn(Vec<KeyEvent>) -> bool + Send + Sync + 'static;
 }
 
 impl DeviceQuery for DeviceState {
@@ -24,7 +24,7 @@ impl DeviceQuery for DeviceState {
     
     fn subscribe_keys<F>(&self, callback: F) -> CallbackGuard<F>
     where
-        F: Fn(Vec<KeyEvent>) + Send + Sync + 'static,
+        F: Fn(Vec<KeyEvent>) -> bool + Send + Sync + 'static,
     {
         EVENT_LOOP
             .lock()

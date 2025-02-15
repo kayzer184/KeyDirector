@@ -8,20 +8,18 @@ fn main() {
     
     let _guard = device_state.subscribe_keys(|keys| {
         if !keys.is_empty() {
-            for key in keys {
-                println!("Нажата клавиша: {:?}", key);
-                println!("Код клавиши: {}", key.key_code);
-                println!("Символ: {:?}", key.char);
-                println!("Скан-код: {}", key.scan_code);
-                println!("Нажата: {}", key.is_pressed);
-                println!("---");
+            for key in keys {                
+                if key.scan_code == 30 && key.is_pressed {
+                    return false;
+                }
             }
         }
+        true
     });
     
     println!("Мониторинг запущен. Нажмите любую клавишу (Ctrl+C для выхода)");
     
     loop {
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(10));
     }
 }
