@@ -1,7 +1,7 @@
 //! Devices events listeners.
 
 mod callback;
-mod event_loop;
+pub(crate) mod event_loop;
 mod utils;
 
 pub use self::callback::*;

@@ -67,6 +67,15 @@ impl EventLoop {
         self.keyboard_callbacks.push_key_up(_callback.clone());
         CallbackGuard { _callback }
     }
+
+    pub fn on_keys<F>(&mut self, callback: F) -> CallbackGuard<F>
+    where
+        F: Fn(Vec<KeyEvent>) + Send + Sync + 'static,
+    {
+        let _callback = Arc::new(callback);
+        self.keyboard_callbacks.push_keys(_callback.clone());
+        CallbackGuard { _callback }
+    }
 }
 
 lazy_static! {

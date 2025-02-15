@@ -6,11 +6,15 @@ use KeyEvent;
 /// Keyboard callback.
 pub type KeyboardCallback = dyn Fn(&KeyEvent) + Sync + Send + 'static;
 
+/// Keys callback.
+pub type KeysCallback = dyn Fn(Vec<KeyEvent>) + Sync + Send + 'static;
+
 /// Keyboard callbacks.
 #[derive(Default)]
 pub(crate) struct KeyboardCallbacks {
     key_down: Mutex<Vec<Weak<KeyboardCallback>>>,
     key_up: Mutex<Vec<Weak<KeyboardCallback>>>,
+    keys: Mutex<Vec<Weak<KeysCallback>>>,
 }
 
 impl KeyboardCallbacks {
@@ -28,6 +32,13 @@ impl KeyboardCallbacks {
         }
     }
 
+    pub fn push_keys(&self, callback: Arc<KeysCallback>) {
+        if let Ok(mut keys) = self.keys.lock() {
+            let callback = Arc::downgrade(&callback);
+            keys.push(callback)
+        }
+    }
+
     pub fn run_key_up(&self, key: &KeyEvent) {
         if let Ok(mut callbacks) = self.key_up.lock() {
             utils::DrainFilter::drain_filter(callbacks.deref_mut(), |callback| {
@@ -42,13 +53,14 @@ impl KeyboardCallbacks {
     }
 
     pub fn run_key_down(&self, key: &KeyEvent) {
-        if let Ok(mut callbacks) = self.key_down.lock() {
+        if let Ok(mut callbacks) = self.keys.lock() {
             utils::DrainFilter::drain_filter(callbacks.deref_mut(), |callback| {
                 callback.upgrade().is_none()
             });
             for callback in callbacks.iter() {
                 if let Some(callback) = callback.upgrade() {
-                    callback(key);
+                    let keys = vec![key.clone()];
+                    callback(keys);
                 }
             }
         }

@@ -1,4 +1,3 @@
-use windows::Win32::Foundation::POINT;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyboardState, MapVirtualKeyA,
     ToUnicodeEx, GetKeyboardLayout, MAP_VIRTUAL_KEY_TYPE, 
