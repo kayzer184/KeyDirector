@@ -3,18 +3,84 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     ToUnicodeEx, GetKeyboardLayout, MAP_VIRTUAL_KEY_TYPE, 
     VK_CAPITAL, GetKeyState
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, GUITHREADINFO, GetGUIThreadInfo};
-use std::sync::Mutex;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowThreadProcessId, GUITHREADINFO, GetGUIThreadInfo,
+    SetWindowsHookExW, UnhookWindowsHookEx, CallNextHookEx,
+    WH_KEYBOARD_LL, KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_SYSKEYDOWN, HHOOK,
+    GetMessageW, TranslateMessage, DispatchMessageW, MSG
+};
+use windows::Win32::Foundation::{LPARAM, WPARAM, LRESULT, HWND};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use crate::KeyEvent;
 
 static PREV_PRESSED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+static KEYBOARD_HOOK: Mutex<Option<HHOOK>> = Mutex::new(None);
+static GLOBAL_CALLBACKS: Mutex<Vec<Box<dyn Fn(&KeyEvent) -> bool + Send + Sync>>> = Mutex::new(Vec::new());
 
-#[derive(Debug, Clone)]
-pub struct DeviceState;
+#[derive(Clone)]
+pub struct DeviceState {}
+
+impl std::fmt::Debug for DeviceState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceState")
+            .field("callbacks", &"<callback functions>")
+            .finish()
+    }
+}
+
+unsafe extern "system" fn keyboard_hook_proc(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
+    if code >= 0 {
+        let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
+        let key_event = KeyEvent::new(
+            kbd_struct.vkCode,
+            kbd_struct.scanCode,
+            None,
+            w_param.0 as u32 == WM_KEYDOWN || w_param.0 as u32 == WM_SYSKEYDOWN
+        );
+
+        if let Ok(callbacks) = GLOBAL_CALLBACKS.lock() {
+            for callback in callbacks.iter() {
+                if !callback(&key_event) {
+                    return LRESULT(1);
+                }
+            }
+        }
+    }
+    CallNextHookEx(None, code, w_param, l_param)
+}
 
 impl DeviceState {
     pub fn new() -> DeviceState {
+        thread::spawn(|| {
+            unsafe {
+                let hook = SetWindowsHookExW(
+                    WH_KEYBOARD_LL,
+                    Some(keyboard_hook_proc),
+                    None,
+                    0
+                ).expect("Failed to set keyboard hook");
+                
+                *KEYBOARD_HOOK.lock().unwrap() = Some(hook);
+
+                let mut msg = MSG::default();
+                while GetMessageW(&mut msg, HWND(0), 0, 0).as_bool() {
+                    TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+            }
+        });
+
         DeviceState {}
+    }
+
+    pub fn add_callback<F>(&self, callback: F)
+    where
+        F: Fn(&KeyEvent) -> bool + Send + Sync + 'static,
+    {
+        if let Ok(mut callbacks) = GLOBAL_CALLBACKS.lock() {
+            callbacks.push(Box::new(callback));
+        }
     }
 
     pub fn query_keymap(&self) -> Vec<KeyEvent> {
@@ -85,4 +151,20 @@ impl DeviceState {
         
         key_events
     }
+}
+
+impl Drop for DeviceState {
+    fn drop(&mut self) {
+        if let Ok(mut hook) = KEYBOARD_HOOK.lock() {
+            if let Some(h) = hook.take() {
+                unsafe {
+                    UnhookWindowsHookEx(h);
+                }
+            }
+        }
+    }
+}
+
+lazy_static! {
+    static ref GLOBAL_DEVICE_STATE: Arc<Mutex<DeviceState>> = Arc::new(Mutex::new(DeviceState {}));
 }

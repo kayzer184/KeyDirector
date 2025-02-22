@@ -39,34 +39,19 @@ impl KeyboardCallbacks {
         }
     }
 
-    pub fn run_key_up(&self, key: &KeyEvent) {
-        if let Ok(mut callbacks) = self.key_up.lock() {
+    pub fn run_key_down(&self, key: &KeyEvent) -> bool {
+        if let Ok(mut callbacks) = self.key_down.lock() {
             utils::DrainFilter::drain_filter(callbacks.deref_mut(), |callback| {
                 callback.upgrade().is_none()
             });
             for callback in callbacks.iter() {
                 if let Some(callback) = callback.upgrade() {
                     if !callback(key) {
-                        println!("Обработчик key_up вернул false для клавиши: {:?}", key);
+                        return false; // Блокируем если callback вернул false
                     }
                 }
             }
         }
-    }
-
-    pub fn run_key_down(&self, key: &KeyEvent) {
-        if let Ok(mut callbacks) = self.keys.lock() {
-            utils::DrainFilter::drain_filter(callbacks.deref_mut(), |callback| {
-                callback.upgrade().is_none()
-            });
-            for callback in callbacks.iter() {
-                if let Some(callback) = callback.upgrade() {
-                    let keys = vec![key.clone()];
-                    if !callback(keys) {
-                        println!("Обработчик key_down вернул false для клавиши: {:?}", key);
-                    }
-                }
-            }
-        }
+        true
     }
 }

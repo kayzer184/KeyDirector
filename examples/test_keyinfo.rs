@@ -1,25 +1,24 @@
 extern crate key_director;
-use key_director::{DeviceQuery, DeviceState};
+use key_director::DeviceState;
 use std::{thread, time::Duration};
 
 fn main() {
     println!("Запуск мониторинга клавиатуры...");
     let device_state = DeviceState::new();
     
-    let _guard = device_state.subscribe_keys(|keys| {
-        if !keys.is_empty() {
-            for key in keys {                
-                if key.scan_code == 30 && key.is_pressed {
-                    return false;
-                }
-            }
+    device_state.add_callback(|key| {
+        if key.scan_code == 30 {
+            return false;
+        }
+        if key.scan_code == 31 {
+            return false;
         }
         true
     });
     
-    println!("Мониторинг запущен. Нажмите любую клавишу (Ctrl+C для выхода)");
+    println!("Мониторинг запущен. Попробуйте нажать клавиши A или S (Ctrl+C для выхода)");
     
     loop {
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(100));
     }
 }
