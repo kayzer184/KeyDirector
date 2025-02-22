@@ -7,6 +7,7 @@ fn main() {
     let device_state = DeviceState::new();
     
     device_state.add_callback(|key| {
+        println!("Нажата клавиша: {:?}", key);
         if key.scan_code == 30 {
             return false;
         }

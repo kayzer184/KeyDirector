@@ -8,7 +8,7 @@ pub struct KeyEvent {
     pub is_pressed: bool
 }
 impl KeyEvent {
-    pub fn new(key_code: u32, scan_code: u32, character: Option<char>, is_pressed: bool) -> Self {
+    pub fn new( character: Option<char>, key_code: u32, scan_code: u32, is_pressed: bool) -> Self {
         KeyEvent {
             char: character,
             key_code,

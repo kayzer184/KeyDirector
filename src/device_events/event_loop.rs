@@ -24,9 +24,9 @@ unsafe extern "system" fn keyboard_hook_proc(code: c_int, w_param: WPARAM, l_par
             if let Some(callbacks) = KEYBOARD_CALLBACKS.lock().unwrap().as_ref() {
                 if let Some(callbacks) = callbacks.upgrade() {
                     let key_event = KeyEvent::new(
+                        None,
                         kbd_struct.vkCode,
                         kbd_struct.scanCode,
-                        None,
                         true
                     );
                     

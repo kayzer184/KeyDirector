@@ -1,44 +1,88 @@
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, GetKeyboardState, MapVirtualKeyA,
-    ToUnicodeEx, GetKeyboardLayout, MAP_VIRTUAL_KEY_TYPE, 
-    VK_CAPITAL, GetKeyState
-};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowThreadProcessId, GUITHREADINFO, GetGUIThreadInfo,
     SetWindowsHookExW, UnhookWindowsHookEx, CallNextHookEx,
     WH_KEYBOARD_LL, KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_SYSKEYDOWN, HHOOK,
-    GetMessageW, TranslateMessage, DispatchMessageW, MSG
+    GetMessageW, TranslateMessage, DispatchMessageW, MSG, GUITHREADINFO,
+    GetGUIThreadInfo, GetWindowThreadProcessId
+};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyboardLayout, GetKeyboardState, VK_CAPITAL, GetKeyState,
+    ToUnicodeEx
 };
 use windows::Win32::Foundation::{LPARAM, WPARAM, LRESULT, HWND};
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::collections::HashMap;
 use crate::KeyEvent;
+use lazy_static;
+use std::thread;
 
-static PREV_PRESSED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+lazy_static! {
+    static ref GLOBAL_CALLBACKS: Mutex<Vec<Box<dyn Fn(&KeyEvent) -> bool + Send + Sync>>> = Mutex::new(Vec::new());
+    static ref CURRENT_KEYS: Mutex<HashMap<u32, KeyEvent>> = Mutex::new(HashMap::new());
+}
+
 static KEYBOARD_HOOK: Mutex<Option<HHOOK>> = Mutex::new(None);
-static GLOBAL_CALLBACKS: Mutex<Vec<Box<dyn Fn(&KeyEvent) -> bool + Send + Sync>>> = Mutex::new(Vec::new());
 
 #[derive(Clone)]
 pub struct DeviceState {}
 
-impl std::fmt::Debug for DeviceState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DeviceState")
-            .field("callbacks", &"<callback functions>")
-            .finish()
-    }
-}
-
 unsafe extern "system" fn keyboard_hook_proc(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     if code >= 0 {
         let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
+        let is_pressed = w_param.0 as u32 == WM_KEYDOWN || w_param.0 as u32 == WM_SYSKEYDOWN;
+        
+        let mut keyboard_state = [0u8; 256];
+        GetKeyboardState(&mut keyboard_state);
+        
+        let caps_on = (GetKeyState(VK_CAPITAL.0 as i32) & 1) != 0;
+        if caps_on {
+            keyboard_state[VK_CAPITAL.0 as usize] |= 1;
+        }
+        
+        let mut gui_info = GUITHREADINFO {
+            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
+        
+        let character = if GetGUIThreadInfo(0, &mut gui_info).as_bool() {
+            let thread_id = GetWindowThreadProcessId(gui_info.hwndFocus, None);
+            let keyboard_layout = GetKeyboardLayout(thread_id);
+            
+            let mut buff = [0u16; 8];
+            let chars = ToUnicodeEx(
+                kbd_struct.vkCode,
+                kbd_struct.scanCode,
+                &keyboard_state,
+                &mut buff,
+                8,
+                keyboard_layout
+            );
+            
+            if chars > 0 {
+                std::char::from_u32(buff[0] as u32)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let key_event = KeyEvent::new(
+            character,
             kbd_struct.vkCode,
             kbd_struct.scanCode,
-            None,
-            w_param.0 as u32 == WM_KEYDOWN || w_param.0 as u32 == WM_SYSKEYDOWN
+            is_pressed
         );
 
+        // Обновляем состояние клавиш
+        if let Ok(mut current_keys) = CURRENT_KEYS.lock() {
+            if is_pressed {
+                current_keys.insert(kbd_struct.vkCode, key_event.clone());
+            } else {
+                current_keys.remove(&kbd_struct.vkCode);
+            }
+        }
+
+        // Проверяем callbacks для блокировки
         if let Ok(callbacks) = GLOBAL_CALLBACKS.lock() {
             for callback in callbacks.iter() {
                 if !callback(&key_event) {
@@ -74,6 +118,14 @@ impl DeviceState {
         DeviceState {}
     }
 
+    pub fn get_keys(&self) -> Vec<KeyEvent> {
+        if let Ok(current_keys) = CURRENT_KEYS.lock() {
+            current_keys.values().cloned().collect()
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn add_callback<F>(&self, callback: F)
     where
         F: Fn(&KeyEvent) -> bool + Send + Sync + 'static,
@@ -81,75 +133,6 @@ impl DeviceState {
         if let Ok(mut callbacks) = GLOBAL_CALLBACKS.lock() {
             callbacks.push(Box::new(callback));
         }
-    }
-
-    pub fn query_keymap(&self) -> Vec<KeyEvent> {
-        let mut key_events = Vec::new();
-        let mut keyboard_state = [0u8; 256];
-        let mut current_pressed = Vec::new();
-        
-        unsafe {
-            let mut gui_info = GUITHREADINFO {
-                cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
-                ..Default::default()
-            };
-            
-            if GetGUIThreadInfo(0, &mut gui_info).as_bool() {
-                let mut process_id = 0u32;
-                let thread_id = GetWindowThreadProcessId(gui_info.hwndFocus, Some(&mut process_id));
-                let keyboard_layout = GetKeyboardLayout(thread_id);
-                
-                if GetKeyboardState(&mut keyboard_state).as_bool() {
-                    let caps_on = (GetKeyState(VK_CAPITAL.0 as i32) & 1) != 0;
-                    if caps_on {
-                        keyboard_state[VK_CAPITAL.0 as usize] |= 1;
-                    }
-
-                    for key_code in 0..256 {
-                        let state = GetAsyncKeyState(key_code);
-                        let is_pressed = (state as u32 & 0x8000) != 0;
-                        let was_pressed = (state as u32 & 0x0001) != 0;
-                        
-                        if is_pressed {
-                            current_pressed.push(key_code as u32);
-                        }
-
-                        if was_pressed || (PREV_PRESSED.lock().unwrap().contains(&(key_code as u32)) && !is_pressed) {
-                            let scan_code = MapVirtualKeyA(key_code as u32, MAP_VIRTUAL_KEY_TYPE(0));
-                            let mut buff = [0u16; 8];
-                            
-                            let chars = ToUnicodeEx(
-                                key_code as u32,
-                                scan_code,
-                                &keyboard_state,
-                                &mut buff,
-                                8,
-                                keyboard_layout
-                            );
-                            
-                            let character = if chars > 0 {
-                                std::char::from_u32(buff[0] as u32)
-                            } else {
-                                None
-                            };
-
-                            key_events.push(KeyEvent::new(
-                                key_code as u32,
-                                scan_code,
-                                character,
-                                is_pressed
-                            ));
-                        }
-                    }
-                }
-            }
-            
-            if let Ok(mut prev_pressed) = PREV_PRESSED.lock() {
-                *prev_pressed = current_pressed;
-            }
-        }
-        
-        key_events
     }
 }
 
@@ -163,8 +146,4 @@ impl Drop for DeviceState {
             }
         }
     }
-}
-
-lazy_static! {
-    static ref GLOBAL_DEVICE_STATE: Arc<Mutex<DeviceState>> = Arc::new(Mutex::new(DeviceState {}));
 }

@@ -19,7 +19,7 @@ pub trait DeviceQuery {
 impl DeviceQuery for DeviceState {
     /// Query for all keys that are currently pressed down.
     fn get_keys(&self) -> Vec<KeyEvent> {
-        self.query_keymap()
+        self.get_keys()
     }
     
     fn subscribe_keys<F>(&self, callback: F) -> CallbackGuard<F>
