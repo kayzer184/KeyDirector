@@ -6,18 +6,19 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyboardLayout, GetKeyboardState, VK_CAPITAL, GetKeyState,
-    ToUnicodeEx
+    ToUnicodeEx, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput,
+    VIRTUAL_KEY, MapVirtualKeyW, MAP_VIRTUAL_KEY_TYPE, KEYBD_EVENT_FLAGS
 };
 use windows::Win32::Foundation::{LPARAM, WPARAM, LRESULT, HWND};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use crate::KeyEvent;
-use lazy_static;
 use std::thread;
 
 lazy_static! {
     static ref GLOBAL_CALLBACKS: Mutex<Vec<Box<dyn Fn(&KeyEvent) -> bool + Send + Sync>>> = Mutex::new(Vec::new());
     static ref CURRENT_KEYS: Mutex<HashMap<u32, KeyEvent>> = Mutex::new(HashMap::new());
+    static ref SIMULATION_FLAG: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
 }
 
 static KEYBOARD_HOOK: Mutex<Option<HHOOK>> = Mutex::new(None);
@@ -28,6 +29,7 @@ pub struct DeviceState {}
 unsafe extern "system" fn keyboard_hook_proc(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     if code >= 0 {
         let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
+        
         let is_pressed = w_param.0 as u32 == WM_KEYDOWN || w_param.0 as u32 == WM_SYSKEYDOWN;
         
         let mut keyboard_state = [0u8; 256];
@@ -70,7 +72,8 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, w_param: WPARAM, l_param
             character,
             kbd_struct.vkCode,
             kbd_struct.scanCode,
-            is_pressed
+            is_pressed,
+            kbd_struct.dwExtraInfo == 1
         );
 
         // Обновляем состояние клавиш
@@ -133,6 +136,63 @@ impl DeviceState {
         if let Ok(mut callbacks) = GLOBAL_CALLBACKS.lock() {
             callbacks.push(Box::new(callback));
         }
+    }
+
+    pub fn simulate(&self, keys: Vec<u32>) {
+        thread::spawn(move || {
+            unsafe {
+                let mut inputs = Vec::with_capacity(keys.len() * 2);
+                
+                let mut simulation_flag = SIMULATION_FLAG.lock().unwrap();
+                *simulation_flag = true;
+                
+                // Первый цикл - нажатия клавиш (KEYDOWN)
+                for key in &keys {
+                    let scan_code = MapVirtualKeyW(*key, MAP_VIRTUAL_KEY_TYPE(0));
+
+                    let input = INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 {
+                            ki: KEYBDINPUT {
+                                wVk: VIRTUAL_KEY(*key as u16),
+                                wScan: scan_code as u16,
+                                dwFlags: KEYBD_EVENT_FLAGS(0), // KEYDOWN
+                                dwExtraInfo: 1,
+                                time: 0,
+                            },
+                        },
+                    };
+
+                    inputs.push(input);
+                }
+                
+                // Второй цикл - отпускания клавиш (KEYUP)
+                for key in &keys {
+                    let scan_code = MapVirtualKeyW(*key, MAP_VIRTUAL_KEY_TYPE(0));
+                    
+                    if let Ok(mut current_keys) = CURRENT_KEYS.lock() {
+                        current_keys.remove(key);
+                    }
+
+                    let input = INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 {
+                            ki: KEYBDINPUT {
+                                wVk: VIRTUAL_KEY(*key as u16),
+                                wScan: scan_code as u16,
+                                dwFlags: KEYEVENTF_KEYUP, // Добавляем флаг KEYUP
+                                dwExtraInfo: 1,
+                                time: 0,
+                            },
+                        },
+                    };
+
+                    inputs.push(input);
+                }
+                
+                SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+            }
+        });
     }
 }
 

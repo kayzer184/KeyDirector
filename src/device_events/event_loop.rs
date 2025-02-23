@@ -27,7 +27,8 @@ unsafe extern "system" fn keyboard_hook_proc(code: c_int, w_param: WPARAM, l_par
                         None,
                         kbd_struct.vkCode,
                         kbd_struct.scanCode,
-                        true
+                        true,
+                        kbd_struct.dwExtraInfo == 1
                     );
                     
                     if !callbacks.run_key_down(&key_event) {
