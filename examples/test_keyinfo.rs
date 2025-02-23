@@ -14,16 +14,39 @@ fn main() {
             if key.is_simulated {
                 return true;
             }
-            if key.is_pressed && key.key_code == 8 {
-                device_state_clone.simulate(vec![65]);
+            if key.key_code == 69 {
+                if key.is_pressed {
+                    device_state_clone.press(vec![87]);
+                } else {
+                    device_state_clone.release(vec![87]);
+                }
                 return false;
             }
-            if key.is_pressed && key.key_code == 66 {
-                device_state_clone.simulate(vec![72]);
+            if key.key_code == 83 {
+                if key.is_pressed {
+                    device_state_clone.press(vec![65]);
+                } else {
+                    device_state_clone.release(vec![65]);
+                }
                 return false;
             }
-            if key.is_pressed && key.key_code == 65 {
-                device_state_clone.simulate(vec![8]);
+            if key.key_code == 68 {
+                if key.is_pressed {
+                    device_state_clone.press(vec![83]);
+                } else {
+                    device_state_clone.release(vec![83]);
+                }
+                return false;
+            }
+            if key.key_code == 70 {
+                if key.is_pressed {
+                    device_state_clone.press(vec![68]);
+                } else {
+                    device_state_clone.release(vec![68]);
+                }
+                return false;
+            }
+            if key.key_code == 65 || key.key_code == 87 || key.key_code == 83 || key.key_code == 68 {
                 return false;
             }
             true

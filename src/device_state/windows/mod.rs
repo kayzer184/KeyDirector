@@ -138,7 +138,7 @@ impl DeviceState {
         }
     }
 
-    pub fn simulate(&self, keys: Vec<u32>) {
+    pub fn press(&self, keys: Vec<u32>) {
         thread::spawn(move || {
             unsafe {
                 let mut inputs = Vec::with_capacity(keys.len() * 2);
@@ -166,7 +166,18 @@ impl DeviceState {
                     inputs.push(input);
                 }
                 
-                // Второй цикл - отпускания клавиш (KEYUP)
+                SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+            }
+        });
+    }
+    pub fn release(&self, keys: Vec<u32>) {
+        thread::spawn(move || {
+            unsafe {
+                let mut inputs = Vec::with_capacity(keys.len() * 2);
+                
+                let mut simulation_flag = SIMULATION_FLAG.lock().unwrap();
+                *simulation_flag = true;
+                
                 for key in &keys {
                     let scan_code = MapVirtualKeyW(*key, MAP_VIRTUAL_KEY_TYPE(0));
                     
