@@ -2,7 +2,6 @@
 
 mod callback;
 pub(crate) mod event_loop;
-mod utils;
 
 pub use self::callback::*;
 use self::event_loop::*;
