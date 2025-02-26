@@ -45,6 +45,13 @@ extern crate serde;
 #[cfg(target_os = "windows")]
 extern crate windows;
 
+#[cfg(target_os = "macos")]
+extern crate core_foundation;
+extern crate macos_accessibility_client;
+extern crate cocoa;
+extern crate core_graphics;
+extern crate objc;
+
 pub mod device_events;
 pub mod device_query;
 pub mod device_state;

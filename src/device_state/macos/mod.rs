@@ -1,152 +1,209 @@
-extern crate macos_accessibility_client;
+use macos_accessibility_client::accessibility::application_is_trusted_with_prompt;
+use cocoa::base::{id, nil};
+use cocoa::foundation::NSAutoreleasePool;
+use core_graphics::event::{CGEvent, CGEventFlags, CGEventType, CGKeyCode, CGEventTap, CGEventTapLocation, CGEventMask, CGEventTapPlacement, CGEventTapOptions};
+use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use crate::KeyEvent;
+use core_foundation::mach_port::CFMachPort;
+use core_foundation::runloop::{CFRunLoop, kCFRunLoopCommonModes};
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::time::Duration;
 
-use keymap::Keycode;
-use mouse_state::MouseState;
+const K_CG_KEYBOARD_EVENT_KEYCODE: u32 = 9;  // Core Graphics keyboard event keycode constant
 
-#[derive(Debug, Clone)]
-pub struct DeviceState;
+lazy_static! {
+    static ref GLOBAL_CALLBACKS: Mutex<Vec<Box<dyn Fn(&KeyEvent) -> bool + Send + Sync>>> = Mutex::new(Vec::new());
+    static ref CURRENT_KEYS: Mutex<HashMap<u32, KeyEvent>> = Mutex::new(HashMap::new());
+    static ref SIMULATION_FLAG: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+}
 
-const MAPPING: &[(readkey::Keycode, Keycode)] = &[
-    (readkey::Keycode::_0, Keycode::Key0),
-    (readkey::Keycode::_1, Keycode::Key1),
-    (readkey::Keycode::_2, Keycode::Key2),
-    (readkey::Keycode::_3, Keycode::Key3),
-    (readkey::Keycode::_4, Keycode::Key4),
-    (readkey::Keycode::_5, Keycode::Key5),
-    (readkey::Keycode::_6, Keycode::Key6),
-    (readkey::Keycode::_7, Keycode::Key7),
-    (readkey::Keycode::_8, Keycode::Key8),
-    (readkey::Keycode::_9, Keycode::Key9),
-    (readkey::Keycode::A, Keycode::A),
-    (readkey::Keycode::B, Keycode::B),
-    (readkey::Keycode::C, Keycode::C),
-    (readkey::Keycode::D, Keycode::D),
-    (readkey::Keycode::E, Keycode::E),
-    (readkey::Keycode::F, Keycode::F),
-    (readkey::Keycode::G, Keycode::G),
-    (readkey::Keycode::H, Keycode::H),
-    (readkey::Keycode::I, Keycode::I),
-    (readkey::Keycode::J, Keycode::J),
-    (readkey::Keycode::K, Keycode::K),
-    (readkey::Keycode::L, Keycode::L),
-    (readkey::Keycode::M, Keycode::M),
-    (readkey::Keycode::N, Keycode::N),
-    (readkey::Keycode::O, Keycode::O),
-    (readkey::Keycode::P, Keycode::P),
-    (readkey::Keycode::Q, Keycode::Q),
-    (readkey::Keycode::R, Keycode::R),
-    (readkey::Keycode::S, Keycode::S),
-    (readkey::Keycode::T, Keycode::T),
-    (readkey::Keycode::U, Keycode::U),
-    (readkey::Keycode::V, Keycode::V),
-    (readkey::Keycode::W, Keycode::W),
-    (readkey::Keycode::X, Keycode::X),
-    (readkey::Keycode::Y, Keycode::Y),
-    (readkey::Keycode::Z, Keycode::Z),
-    (readkey::Keycode::F1, Keycode::F1),
-    (readkey::Keycode::F2, Keycode::F2),
-    (readkey::Keycode::F3, Keycode::F3),
-    (readkey::Keycode::F4, Keycode::F4),
-    (readkey::Keycode::F5, Keycode::F5),
-    (readkey::Keycode::F6, Keycode::F6),
-    (readkey::Keycode::F7, Keycode::F7),
-    (readkey::Keycode::F8, Keycode::F8),
-    (readkey::Keycode::F9, Keycode::F9),
-    (readkey::Keycode::F10, Keycode::F10),
-    (readkey::Keycode::F11, Keycode::F11),
-    (readkey::Keycode::F12, Keycode::F12),
-    (readkey::Keycode::Keypad0, Keycode::Numpad0),
-    (readkey::Keycode::Keypad1, Keycode::Numpad1),
-    (readkey::Keycode::Keypad2, Keycode::Numpad2),
-    (readkey::Keycode::Keypad3, Keycode::Numpad3),
-    (readkey::Keycode::Keypad4, Keycode::Numpad4),
-    (readkey::Keycode::Keypad5, Keycode::Numpad5),
-    (readkey::Keycode::Keypad6, Keycode::Numpad6),
-    (readkey::Keycode::Keypad7, Keycode::Numpad7),
-    (readkey::Keycode::Keypad8, Keycode::Numpad8),
-    (readkey::Keycode::Keypad9, Keycode::Numpad9),
-    (readkey::Keycode::KeypadPlus, Keycode::NumpadAdd),
-    (readkey::Keycode::KeypadMinus, Keycode::NumpadSubtract),
-    (readkey::Keycode::KeypadDivide, Keycode::NumpadDivide),
-    (readkey::Keycode::KeypadMultiply, Keycode::NumpadMultiply),
-    (readkey::Keycode::Escape, Keycode::Escape),
-    (readkey::Keycode::Space, Keycode::Space),
-    (readkey::Keycode::Control, Keycode::LControl),
-    (readkey::Keycode::RightControl, Keycode::RControl),
-    (readkey::Keycode::Shift, Keycode::LShift),
-    (readkey::Keycode::RightShift, Keycode::RShift),
-    (readkey::Keycode::Option, Keycode::LAlt),
-    (readkey::Keycode::RightOption, Keycode::RAlt),
-    (readkey::Keycode::Command, Keycode::Meta),
-    (readkey::Keycode::Return, Keycode::Enter),
-    (readkey::Keycode::Up, Keycode::Up),
-    (readkey::Keycode::Down, Keycode::Down),
-    (readkey::Keycode::Left, Keycode::Left),
-    (readkey::Keycode::Right, Keycode::Right),
-    (readkey::Keycode::Delete, Keycode::Backspace),
-    (readkey::Keycode::CapsLock, Keycode::CapsLock),
-    (readkey::Keycode::Tab, Keycode::Tab),
-    (readkey::Keycode::Home, Keycode::Home),
-    (readkey::Keycode::End, Keycode::End),
-    (readkey::Keycode::PageUp, Keycode::PageUp),
-    (readkey::Keycode::PageDown, Keycode::PageDown),
-    (readkey::Keycode::Help, Keycode::Insert),
-    (readkey::Keycode::ForwardDelete, Keycode::Delete),
-    (readkey::Keycode::Grave, Keycode::Grave),
-    (readkey::Keycode::Minus, Keycode::Minus),
-    (readkey::Keycode::Equal, Keycode::Equal),
-    (readkey::Keycode::LeftBracket, Keycode::LeftBracket),
-    (readkey::Keycode::RightBracket, Keycode::RightBracket),
-    (readkey::Keycode::Backslash, Keycode::BackSlash),
-    (readkey::Keycode::Semicolon, Keycode::Semicolon),
-    (readkey::Keycode::Quote, Keycode::Apostrophe),
-    (readkey::Keycode::Comma, Keycode::Comma),
-    (readkey::Keycode::Period, Keycode::Dot),
-    (readkey::Keycode::Slash, Keycode::Slash),
-];
+thread_local! {
+    static EVENT_TAP: RefCell<Option<CGEventTap<'static>>> = RefCell::new(None);
+}
+
+pub struct DeviceState {
+    initialized: Arc<AtomicBool>,
+}
 
 impl DeviceState {
-    pub fn new() -> DeviceState {
-        // TODO: remove this
-        assert!(
-            has_accessibility(),
-            "This app does not have Accessibility Permissions enabled and will not work"
-        );
+    pub fn new() -> Self {
+        if !application_is_trusted_with_prompt() {
+            panic!("Application needs Accessibility permissions to monitor keyboard events");
+        }
 
-        DeviceState {}
+        let initialized = Arc::new(AtomicBool::new(false));
+        let init_clone = initialized.clone();
+        
+        thread::spawn(move || {
+            println!("Starting event tap thread");
+            let pool = unsafe { NSAutoreleasePool::new(nil) };
+            
+            EVENT_TAP.with(|tap| {
+                println!("Creating event tap");
+                let event_tap = CGEventTap::new(
+                    CGEventTapLocation::HID,
+                    CGEventTapPlacement::HeadInsertEventTap,
+                    CGEventTapOptions::Default,
+                    vec![CGEventType::KeyDown, CGEventType::KeyUp],
+                    move |proxy, event_type, event| unsafe {
+                        println!("Received event: {:?}", event_type);
+                        if let Some(key_event) = handle_keyboard_event(event_type, event) {
+                            println!("Processed key event: {:?}", key_event);
+                            if let Ok(mut current_keys) = CURRENT_KEYS.lock() {
+                                if key_event.is_pressed {
+                                    current_keys.insert(key_event.key_code, key_event.clone());
+                                } else {
+                                    current_keys.remove(&key_event.key_code);
+                                }
+                            }
+                            
+                            if let Ok(callbacks) = GLOBAL_CALLBACKS.lock() {
+                                for callback in callbacks.iter() {
+                                    if !callback(&key_event) {
+                                        return None;
+                                    }
+                                }
+                            }
+                        }
+                        Some(event.clone())
+                    },
+                ).expect("Failed to create event tap");
+                
+                println!("Enabling event tap");
+                event_tap.enable();
+                
+                // Get the run loop and add the event tap to it
+                let run_loop = CFRunLoop::get_current();
+                let tap_port = &event_tap.mach_port;
+                let run_loop_source = CFMachPort::create_runloop_source(tap_port, 0).expect("Failed to create run loop source");
+                unsafe { run_loop.add_source(&run_loop_source, kCFRunLoopCommonModes) };
+                
+                *tap.borrow_mut() = Some(event_tap);
+            });
+
+            init_clone.store(true, Ordering::SeqCst);
+            println!("Starting run loop");
+            CFRunLoop::run_current();
+            unsafe { pool.drain(); }
+        });
+        
+        // Wait for initialization
+        while !initialized.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_millis(10));
+        }
+        
+        DeviceState { initialized }
     }
 
     /// returns `None` if app doesn't accessibility permissions.
     pub fn checked_new() -> Option<DeviceState> {
         if has_accessibility() {
-            Some(DeviceState {})
+            Some(DeviceState::new())
         } else {
             None
         }
     }
 
-    pub fn query_pointer(&self) -> MouseState {
-        let (x, y) = readmouse::Mouse::location();
-        let button_pressed = vec![
-            false,
-            readmouse::Mouse::Left.is_pressed(),
-            readmouse::Mouse::Right.is_pressed(),
-            readmouse::Mouse::Center.is_pressed(),
-            false,
-        ];
-
-        MouseState {
-            coords: (x as i32, y as i32),
-            button_pressed,
+    pub fn get_keys(&self) -> Vec<KeyEvent> {
+        if let Ok(current_keys) = CURRENT_KEYS.lock() {
+            current_keys.values().cloned().collect()
+        } else {
+            Vec::new()
         }
     }
 
-    pub fn query_keymap(&self) -> Vec<Keycode> {
-        MAPPING
-            .iter()
-            .filter(|(from, _)| from.is_pressed())
-            .map(|(_, to)| *to)
-            .collect()
+    pub fn add_callback<F>(&self, callback: F)
+    where
+        F: Fn(&KeyEvent) -> bool + Send + Sync + 'static,
+    {
+        if let Ok(mut callbacks) = GLOBAL_CALLBACKS.lock() {
+            callbacks.push(Box::new(callback));
+        }
+    }
+
+    pub fn press(&self, keys: Vec<u32>) {
+        let source = CGEventSource::new(CGEventSourceStateID::Private)
+            .expect("Failed to create event source");
+            
+        for key in keys {
+            let down_event = CGEvent::new_keyboard_event(
+                source.clone(),
+                key as CGKeyCode,
+                true
+            ).expect("Failed to create key down event");
+            
+            down_event.set_flags(CGEventFlags::empty());
+            down_event.post(CGEventTapLocation::HID);
+        }
+    }
+
+    pub fn release(&self, keys: Vec<u32>) {
+        let source = CGEventSource::new(CGEventSourceStateID::Private)
+            .expect("Failed to create event source");
+            
+        for key in keys {
+            let up_event = CGEvent::new_keyboard_event(
+                source.clone(),
+                key as CGKeyCode,
+                false
+            ).expect("Failed to create key up event");
+            
+            up_event.set_flags(CGEventFlags::empty());
+            up_event.post(CGEventTapLocation::HID);
+        }
+    }
+}
+
+impl Drop for DeviceState {
+    fn drop(&mut self) {
+        EVENT_TAP.with(|tap| {
+            if let Some(tap) = tap.borrow_mut().take() {
+                tap.enable();
+            }
+        });
+    }
+}
+
+unsafe extern "C" fn event_callback(_proxy: *const std::ffi::c_void, event_type: CGEventType, event: &CGEvent) -> Option<CGEvent> {
+    if let Some(key_event) = handle_keyboard_event(event_type, event) {
+        if let Ok(mut current_keys) = CURRENT_KEYS.lock() {
+            if key_event.is_pressed {
+                current_keys.insert(key_event.key_code, key_event.clone());
+            } else {
+                current_keys.remove(&key_event.key_code);
+            }
+        }
+        
+        if let Ok(callbacks) = GLOBAL_CALLBACKS.lock() {
+            for callback in callbacks.iter() {
+                if !callback(&key_event) {
+                    return None;
+                }
+            }
+        }
+    }
+    Some(event.clone())
+}
+
+fn handle_keyboard_event(event_type: CGEventType, event: &CGEvent) -> Option<KeyEvent> {
+    match event_type {
+        CGEventType::KeyDown | CGEventType::KeyUp => {
+            let key_code = event.get_integer_value_field(K_CG_KEYBOARD_EVENT_KEYCODE) as u32;
+            let flags = event.get_flags();
+            
+            Some(KeyEvent::new(
+                None, // TODO: Implement character conversion
+                key_code,
+                key_code, // Using keycode as scancode for now
+                matches!(event_type, CGEventType::KeyDown),
+                flags.contains(CGEventFlags::CGEventFlagNull)
+            ))
+        }
+        _ => None
     }
 }
 
@@ -160,10 +217,5 @@ impl DeviceState {
 ///   4. Add the app that is using device_query (such as your terminal) to the list
 ///
 fn has_accessibility() -> bool {
-    use self::macos_accessibility_client::accessibility::*;
-    // Without prompting:
-    // application_is_trusted()
-
-    // With prompting:
     application_is_trusted_with_prompt()
 }
