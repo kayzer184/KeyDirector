@@ -47,9 +47,17 @@ extern crate windows;
 
 #[cfg(target_os = "macos")]
 extern crate core_foundation;
+
+#[cfg(target_os = "macos")]
 extern crate macos_accessibility_client;
+
+#[cfg(target_os = "macos")]
 extern crate cocoa;
+
+#[cfg(target_os = "macos")]
 extern crate core_graphics;
+
+#[cfg(target_os = "macos")]
 extern crate objc;
 
 pub mod device_events;
