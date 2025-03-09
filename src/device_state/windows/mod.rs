@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use crate::KeyEvent;
 use std::thread;
+use std::cell::RefCell;
 
 lazy_static! {
     static ref GLOBAL_CALLBACKS: Mutex<Vec<Box<dyn Fn(&KeyEvent) -> bool + Send + Sync>>> = Mutex::new(Vec::new());
@@ -21,7 +22,10 @@ lazy_static! {
     static ref SIMULATION_FLAG: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
 }
 
-static KEYBOARD_HOOK: Mutex<Option<HHOOK>> = Mutex::new(None);
+// Заменяем static на thread_local
+thread_local! {
+    static KEYBOARD_HOOK: RefCell<Option<HHOOK>> = RefCell::new(None);
+}
 
 #[derive(Clone)]
 pub struct DeviceState {}
@@ -45,7 +49,7 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, w_param: WPARAM, l_param
             ..Default::default()
         };
         
-        let character = if GetGUIThreadInfo(0, &mut gui_info).as_bool() {
+        let character = if GetGUIThreadInfo(0, &mut gui_info).is_ok() {
             let thread_id = GetWindowThreadProcessId(gui_info.hwndFocus, None);
             let keyboard_layout = GetKeyboardLayout(thread_id);
             
@@ -56,7 +60,7 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, w_param: WPARAM, l_param
                 &keyboard_state,
                 &mut buff,
                 8,
-                keyboard_layout
+                Some(keyboard_layout)
             );
             
             if chars > 0 {
@@ -108,10 +112,13 @@ impl DeviceState {
                     0
                 ).expect("Failed to set keyboard hook");
                 
-                *KEYBOARD_HOOK.lock().unwrap() = Some(hook);
+                // Обновляем значение через thread_local
+                KEYBOARD_HOOK.with(|hook_ref| {
+                    *hook_ref.borrow_mut() = Some(hook);
+                });
 
                 let mut msg = MSG::default();
-                while GetMessageW(&mut msg, HWND(0), 0, 0).as_bool() {
+                while GetMessageW(&mut msg, Some(HWND(std::ptr::null_mut())), 0, 0).0 > 0 {
                     TranslateMessage(&msg);
                     DispatchMessageW(&msg);
                 }
@@ -209,12 +216,13 @@ impl DeviceState {
 
 impl Drop for DeviceState {
     fn drop(&mut self) {
-        if let Ok(mut hook) = KEYBOARD_HOOK.lock() {
-            if let Some(h) = hook.take() {
+        // Обновляем использование через thread_local
+        KEYBOARD_HOOK.with(|hook_ref| {
+            if let Some(h) = hook_ref.borrow_mut().take() {
                 unsafe {
                     UnhookWindowsHookEx(h);
                 }
             }
-        }
+        });
     }
 }
